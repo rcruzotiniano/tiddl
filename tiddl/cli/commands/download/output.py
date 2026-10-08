@@ -34,6 +34,7 @@ class RichOutput:
         self.console = console
         progress_file = os.environ.get("TIDDL_GUI_PROGRESS_FILE")
         self.gui_progress_file = Path(progress_file) if progress_file else None
+        self.gui_resource: dict[str, str] = {}
 
         self.download_progress = Progress(
             SpinnerColumn(),
@@ -77,12 +78,26 @@ class RichOutput:
         temporary = self.gui_progress_file.with_suffix(".tmp")
         try:
             temporary.write_text(
-                json.dumps({"completed": task.completed, "total": task.total}),
+                json.dumps(
+                    {
+                        "completed": task.completed,
+                        "total": task.total,
+                        **self.gui_resource,
+                    }
+                ),
                 encoding="utf-8",
             )
             temporary.replace(self.gui_progress_file)
         except OSError:
             pass
+
+    def set_gui_resource(self, artist: str, title: str, resource_type: str) -> None:
+        self.gui_resource = {
+            "artist": artist,
+            "title": title,
+            "resource_type": resource_type,
+        }
+        self._write_gui_progress()
 
     def total_increment(self, count: float = 1):
         task = self.total_progress._tasks.get(self.total_task)

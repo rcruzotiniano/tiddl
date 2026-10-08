@@ -5,13 +5,14 @@ from __future__ import annotations
 import json
 import os
 import queue
-import subprocess
 import sys
 import threading
 import time
 import webbrowser
+from contextlib import redirect_stderr, redirect_stdout
+from io import StringIO
 from pathlib import Path
-from tkinter import StringVar, Tk, messagebox, ttk
+from tkinter import StringVar, TclError, Tk, messagebox, ttk
 
 # ``python tiddl/gui.py`` is convenient during development.  Add the project
 # root in that case; normal package/module execution does not need this.
@@ -26,6 +27,7 @@ from tiddl.core.auth import AuthAPI, AuthClientError
 
 SETTINGS_FILE = APP_PATH / "gui-settings.json"
 PROGRESS_FILE = APP_PATH / "gui-progress.json"
+ICON_FILENAME = "tiddl.ico"
 QUALITIES = {
     "Básica · 96 kbps": "low",
     "Alta · 320 kbps": "normal",
@@ -34,12 +36,22 @@ QUALITIES = {
 }
 
 
+def asset_path(filename: str) -> Path:
+    """Locate bundled assets in both source and PyInstaller builds."""
+    base_path = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    return base_path / "assets" / filename
+
+
 class TiddlGUI:
     """Native UI which keeps the CLI as the single download implementation."""
 
     def __init__(self) -> None:
         self.root = Tk()
         self.root.title("tiddl")
+        try:
+            self.root.iconbitmap(str(asset_path(ICON_FILENAME)))
+        except TclError:
+            pass
         self.root.geometry("780x520")
         self.root.minsize(680, 450)
         self.root.configure(bg="#101114")
@@ -48,6 +60,7 @@ class TiddlGUI:
         self.quality = StringVar(value=self._saved_quality_label())
         self.album_url = StringVar()
         self.status = StringVar(value="Listo para descargar")
+        self.now_playing = StringVar(value="")
         self.progress_text = StringVar(value="")
         self.account = StringVar()
         self._configure_style()
@@ -86,12 +99,17 @@ class TiddlGUI:
 
         download = ttk.Frame(content, style="Card.TFrame", padding=24)
         download.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
-        ttk.Label(download, text="Descargar un álbum", style="CardTitle.TLabel").pack(anchor="w")
-        ttk.Label(download, text="Pega un enlace de álbum de TIDAL.", style="Card.TLabel").pack(anchor="w", pady=(5, 18))
-        ttk.Entry(download, textvariable=self.album_url).pack(fill="x")
-        self.download_button = ttk.Button(download, text="Descargar álbum", style="Primary.TButton", command=self.start_download)
+        ttk.Label(download, text="Descargar música", style="CardTitle.TLabel").pack(anchor="w")
+        ttk.Label(download, text="Pega un enlace de álbum o pista de TIDAL.", style="Card.TLabel").pack(anchor="w", pady=(5, 18))
+        url_row = ttk.Frame(download, style="Card.TFrame")
+        url_row.pack(fill="x")
+        url_row.columnconfigure(0, weight=1)
+        ttk.Entry(url_row, textvariable=self.album_url).grid(row=0, column=0, sticky="ew")
+        ttk.Button(url_row, text="Pegar", style="Muted.TButton", command=self.paste_url).grid(row=0, column=1, padx=(8, 0))
+        self.download_button = ttk.Button(download, text="Descargar", style="Primary.TButton", command=self.start_download)
         self.download_button.pack(anchor="w", pady=(18, 10))
         ttk.Label(download, textvariable=self.status, style="Card.TLabel", wraplength=390).pack(anchor="w", pady=(8, 0))
+        ttk.Label(download, textvariable=self.now_playing, style="CardTitle.TLabel", wraplength=600).pack(anchor="w", pady=(16, 0))
         self.progress = ttk.Progressbar(
             download,
             style="Gui.Horizontal.TProgressbar",
@@ -141,11 +159,17 @@ class TiddlGUI:
         self.login_button.configure(state="disabled" if logged_in else "normal")
         self.logout_button.configure(state="normal" if logged_in else "disabled")
 
+    def paste_url(self) -> None:
+        try:
+            self.album_url.set(self.root.clipboard_get().strip())
+        except TclError:
+            self.status.set("El portapapeles no contiene texto")
+
     def start_download(self) -> None:
         try:
             resource = TidalResource.from_string(self.album_url.get().strip())
-            if resource.type != "album":
-                raise ValueError("Solo se admiten enlaces de álbum de TIDAL.")
+            if resource.type not in ("album", "track"):
+                raise ValueError("Solo se admiten enlaces de álbum o pista de TIDAL.")
         except ValueError as exc:
             messagebox.showerror("Enlace no válido", str(exc))
             return
@@ -156,7 +180,8 @@ class TiddlGUI:
         self.running = True
         self.download_button.configure(state="disabled")
         self.progress.configure(maximum=1, value=0)
-        self.progress_text.set("Preparando álbum...")
+        self.now_playing.set("")
+        self.progress_text.set("Preparando descarga...")
         try:
             PROGRESS_FILE.unlink()
         except FileNotFoundError:
@@ -165,29 +190,31 @@ class TiddlGUI:
         threading.Thread(target=self._run_download, args=(resource.url,), daemon=True).start()
 
     def _run_download(self, url: str) -> None:
-        command = [sys.executable, "-m", "tiddl", "download", "--track-quality", QUALITIES[self.quality.get()], "url", url]
+        download_args = ["download", "--track-quality", QUALITIES[self.quality.get()], "url", url]
+        output = StringIO()
+        previous_progress_file = os.environ.get("TIDDL_GUI_PROGRESS_FILE")
         try:
-            # Pin the child process to this checkout/package.  Otherwise a
-            # globally installed, older ``tiddl`` can win module resolution.
-            environment = os.environ.copy()
-            environment["TIDDL_GUI_PROGRESS_FILE"] = str(PROGRESS_FILE)
-            process = subprocess.Popen(
-                command,
-                cwd=Path(__file__).resolve().parent.parent,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                env=environment,
-            )
-            output, _ = process.communicate()
-            if process.returncode:
-                self.events.put(("error", output.strip() or "La descarga no pudo iniciarse."))
+            os.environ["TIDDL_GUI_PROGRESS_FILE"] = str(PROGRESS_FILE)
+            from tiddl.cli.app import app
+
+            # Running the CLI application in this worker thread avoids a
+            # second Windows process (and its brief black console window).
+            with redirect_stdout(output), redirect_stderr(output):
+                app(args=download_args, prog_name="tiddl", standalone_mode=False)
+            self.events.put(("complete", "Álbum descargado correctamente."))
+        except SystemExit as exc:
+            if exc.code not in (None, 0):
+                self.events.put(("error", output.getvalue().strip() or "La descarga no pudo iniciarse."))
             else:
                 self.events.put(("complete", "Álbum descargado correctamente."))
-        except OSError as exc:
-            self.events.put(("error", f"No se pudo iniciar tiddl: {exc}"))
+        except Exception as exc:
+            details = output.getvalue().strip()
+            self.events.put(("error", details or f"No se pudo descargar: {exc}"))
+        finally:
+            if previous_progress_file is None:
+                os.environ.pop("TIDDL_GUI_PROGRESS_FILE", None)
+            else:
+                os.environ["TIDDL_GUI_PROGRESS_FILE"] = previous_progress_file
 
     def start_login(self) -> None:
         self.login_button.configure(state="disabled")
@@ -264,6 +291,10 @@ class TiddlGUI:
 
         self.progress.configure(maximum=total, value=completed)
         self.progress_text.set(f"{int(completed)} de {int(total)} pistas completadas")
+        artist = data.get("artist", "")
+        title = data.get("title", "")
+        if title:
+            self.now_playing.set(f"{artist} — {title}" if artist else title)
 
     def run(self) -> None:
         self.root.mainloop()
@@ -275,4 +306,10 @@ def run_gui() -> None:
 
 
 if __name__ == "__main__":
-    run_gui()
+    if getattr(sys, "frozen", False) and len(sys.argv) > 1 and sys.argv[1] == "--cli":
+        from tiddl.cli.app import app
+
+        sys.argv = [sys.argv[0], *sys.argv[2:]]
+        app()
+    else:
+        run_gui()

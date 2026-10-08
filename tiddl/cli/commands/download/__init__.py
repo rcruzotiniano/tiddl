@@ -327,6 +327,11 @@ def download_callback(
                 return download_path, item
 
             async def download_album(album: Album):
+                rich_output.set_gui_resource(
+                    artist=album.artist.name if album.artist else "",
+                    title=album.title,
+                    resource_type="album",
+                )
                 offset = 0
                 futures = []
 
@@ -436,6 +441,11 @@ def download_callback(
                 case "track":
                     track = ctx.obj.api.get_track(resource.id)
                     album = ctx.obj.api.get_album(track.album.id)
+                    rich_output.set_gui_resource(
+                        artist=track.artist.name if track.artist else "",
+                        title=track.title,
+                        resource_type="track",
+                    )
 
                     cover: Cover | None = None
                     save_cover = ("track" in CONFIG.cover.allowed) and CONFIG.cover.save

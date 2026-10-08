@@ -10,11 +10,14 @@ def run(cmd: list[str]) -> subprocess.CompletedProcess:
     """Run a process; raise `FFmpegError` on non-zero exit with stderr."""
     # Force UTF-8 encoding to prevent UnicodeDecodeError on Windows
     r = subprocess.run(
-        cmd, 
-        capture_output=True, 
-        text=True, 
-        encoding="utf-8", 
-        errors="replace"  # Added as a safety net
+        cmd,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",  # Added as a safety net
+        # ffmpeg and ffprobe are console programs. Suppress their transient
+        # windows when the application is launched as a Windows GUI.
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
     if r.returncode != 0:
         raise FFmpegError(
