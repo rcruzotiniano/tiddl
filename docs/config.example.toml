@@ -123,6 +123,9 @@ save = false
 # size of cover, default and max is 1280x1280
 size = 1280
 
+# Filename placed inside the generated album/track/playlist directory.
+filename = "cover.jpg"
+
 # you can allow saving covers for tracks, albums and playlists.
 # note that playlists max size is 1080x1080
 # (it will be set to proper size automatically)

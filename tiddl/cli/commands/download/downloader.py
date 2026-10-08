@@ -99,6 +99,7 @@ class Downloader:
             self.rich_output.console.print(
                 f"[red]Can't stream[/] {item.title} ({item.id})"
             )
+            self.rich_output.total_complete()
             return None, False
 
         if isinstance(item, Track):
@@ -128,6 +129,7 @@ class Downloader:
                     item_description=f"[{vibrant_color}]{item.title}",
                     item_path=existing_file_path,
                 )
+                self.rich_output.total_complete()
                 return existing_file_path, False
 
         elif (isinstance(item, Video) and self.videos_filter == "none") or (
@@ -137,6 +139,7 @@ class Downloader:
             self.rich_output.console.print(
                 f"Skipping '{item.title}' due to video filter set to '{self.videos_filter}'"
             )
+            self.rich_output.total_complete()
             return None, False
 
         should_extract_flac = False
@@ -162,6 +165,7 @@ class Downloader:
                         self.rich_output.console.print(
                             f"[blue]Skipping[/] [gray]{item.title}[/] [blue]due to Dolby Atmos filter[/] {self.dolby_atmos_filter}"
                         )
+                        self.rich_output.total_complete()
                         return None, False
 
                 except ApiError as e:
@@ -169,6 +173,7 @@ class Downloader:
                     self.rich_output.console.print(
                         f"[red]Error [{vibrant_color}]{item.title}[/] - {e.user_message}"
                     )
+                    self.rich_output.total_complete()
                     return None, False
 
                 urls, _ = parse_track_stream(stream)

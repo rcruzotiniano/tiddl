@@ -1,6 +1,6 @@
 # Tidal Downloader
 
-Download tracks and videos from Tidal with max quality! `tiddl` is CLI app written in Python.
+Download tracks and videos from Tidal with max quality! `tiddl` is a Python app with CLI and desktop interface.
 
 > [!WARNING]
 > `This app is for personal use only and is not affiliated with Tidal. Users must ensure their use complies with Tidal's terms of service and local copyright laws. Downloaded tracks are for personal use and may not be shared or redistributed. The developer assumes no responsibility for misuse of this app.`
@@ -65,6 +65,16 @@ $ tiddl
 │ download   Download Tidal resources.                                                                        │
 ╰─────────────────────────────────────────────────────────────────────────────────────────────────────────────╯
 ```
+
+## Desktop interface
+
+Open the focused desktop interface with:
+
+```bash
+tiddl gui
+```
+
+It includes TIDAL login/logout, an audio-quality selector, and album-only downloads. Paste a TIDAL album link into the download field. The GUI stores its selected quality separately and passes it to the existing downloader for every download.
 
 ## Authentication
 

@@ -1,4 +1,5 @@
 import requests
+import shutil
 
 from pathlib import Path
 from logging import getLogger
@@ -40,12 +41,26 @@ class Cover:
 
         return req.content
 
-    def save_to_directory(self, path: Path):
-        file = path.with_suffix(".jpg")
+    def save_to_directory(self, path: Path, filename: str = "cover.jpg"):
+        """Save the cover inside ``path`` instead of beside the album directory."""
+        file = path / Path(filename).name
+        legacy_file = path.with_suffix(".jpg")
 
         if file.exists():
             log.debug(f"cover exists ({file})")
             return
+
+        # Previous releases stored ``Album.jpg`` next to the ``Album``
+        # directory. Reuse it when present, so existing downloads are fixed
+        # even if the artwork endpoint is temporarily unavailable.
+        if legacy_file.exists() and legacy_file.is_file():
+            file.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.move(str(legacy_file), str(file))
+                log.debug(f"moved legacy cover ({legacy_file} -> {file})")
+                return
+            except OSError as exc:
+                log.warning(f"could not move legacy cover ({legacy_file}): {exc}")
 
         if not self.data:
             self.data = self.fetch_data()

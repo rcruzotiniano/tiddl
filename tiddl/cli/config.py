@@ -34,6 +34,7 @@ class Config(BaseModel):
     class CoverConfig(BaseModel):
         save: bool = False
         size: int = 1280
+        filename: str = "cover.jpg"
         allowed: list[VALID_RESOURCE_COVER_SAVE_LITERAL] = []
 
         class CoverTemplatesConfig(BaseModel):

@@ -1,3 +1,5 @@
+import json
+import os
 from pathlib import Path
 
 from rich.console import Console, Group
@@ -30,6 +32,8 @@ class TimeElapsedColumn(ProgressColumn):
 class RichOutput:
     def __init__(self, console: Console, download_height: int | None = None) -> None:
         self.console = console
+        progress_file = os.environ.get("TIDDL_GUI_PROGRESS_FILE")
+        self.gui_progress_file = Path(progress_file) if progress_file else None
 
         self.download_progress = Progress(
             SpinnerColumn(),
@@ -64,6 +68,22 @@ class RichOutput:
         self.total_task = self.total_progress.add_task("Total", total=0, start=True)
         self.total_downloads = 0
 
+    def _write_gui_progress(self) -> None:
+        if not self.gui_progress_file:
+            return
+        task = self.total_progress._tasks.get(self.total_task)
+        if not task or task.total is None:
+            return
+        temporary = self.gui_progress_file.with_suffix(".tmp")
+        try:
+            temporary.write_text(
+                json.dumps({"completed": task.completed, "total": task.total}),
+                encoding="utf-8",
+            )
+            temporary.replace(self.gui_progress_file)
+        except OSError:
+            pass
+
     def total_increment(self, count: float = 1):
         task = self.total_progress._tasks.get(self.total_task)
 
@@ -71,6 +91,11 @@ class RichOutput:
         assert task.total is not None
 
         self.total_progress.update(self.total_task, total=task.total + count)
+        self._write_gui_progress()
+
+    def total_complete(self) -> None:
+        self.total_progress.advance(self.total_task, advance=1)
+        self._write_gui_progress()
 
     def download_start(self, description: str) -> TaskID:
         return self.download_progress.add_task(description=description, total=None)
@@ -84,7 +109,7 @@ class RichOutput:
         assert task is not None
 
         self.download_progress.remove_task(task_id=task_id)
-        self.total_progress.advance(self.total_task, advance=1)
+        self.total_complete()
         self.total_downloads += 1
 
         return task

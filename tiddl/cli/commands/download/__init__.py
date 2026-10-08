@@ -227,12 +227,14 @@ def download_callback(
                 artist: str = "",
                 credits: list[AlbumItemsCredits.ItemWithCredits.CreditsEntry] = [],
                 cover: Cover | None = None,
+                save_cover_to_track_directory: bool = False,
                 album_review: str = "",
             ) -> None:
                 self.date = date
                 self.artist = artist
                 self.credits = credits
                 self.cover = cover
+                self.save_cover_to_track_directory = save_cover_to_track_directory
                 self.album_review = album_review
 
         async def handle_resource(resource: TidalResource):
@@ -252,6 +254,22 @@ def download_callback(
                 )
 
                 log.debug(f"{download_path=}, {was_downloaded=}")
+
+                # Cover files are independent of embedded track metadata. Do
+                # this before the metadata/skip check so a re-run can repair
+                # an existing album without downloading its tracks again.
+                if (
+                    isinstance(item, Track)
+                    and download_path
+                    and track_metadata.save_cover_to_track_directory
+                    and track_metadata.cover
+                ):
+                    if track_metadata.cover.data is None:
+                        track_metadata.cover.fetch_data()
+                    track_metadata.cover.save_to_directory(
+                        path=download_path.parent,
+                        filename=CONFIG.cover.filename,
+                    )
 
                 if (
                     CONFIG.metadata.enable
@@ -357,6 +375,7 @@ def download_callback(
                                     file_path=file_path,
                                     track_metadata=Metadata(
                                         cover=cover,
+                                        save_cover_to_track_directory=save_cover,
                                         date=str(album.releaseDate),
                                         artist=(
                                             album.artist.name if album.artist else ""
@@ -404,7 +423,8 @@ def download_callback(
                         path=DOWNLOAD_PATH
                         / format_template(
                             template=CONFIG.cover.templates.album, album=album
-                        )
+                        ),
+                        filename=CONFIG.cover.filename,
                     )
 
             # resources should be collected from a distinct function
@@ -450,7 +470,8 @@ def download_callback(
                             path=DOWNLOAD_PATH
                             / format_template(
                                 CONFIG.cover.templates.track, item=track, album=album
-                            )
+                            ),
+                            filename=CONFIG.cover.filename,
                         )
 
                 case "video":
@@ -723,7 +744,8 @@ def download_callback(
                             / format_template(
                                 template=CONFIG.cover.templates.playlist,
                                 playlist=playlist,
-                            )
+                            ),
+                            filename=CONFIG.cover.filename,
                         )
 
         with Live(
