@@ -53,6 +53,29 @@ python -m PyInstaller --noconfirm --clean --onefile --windowed --name tiddl --ic
 
 El resultado queda en `dist\tiddl.exe`. Ábrelo con doble clic; no requiere que el entorno virtual esté activado. Windows puede mostrar una advertencia de SmartScreen porque el ejecutable no está firmado.
 
+## Cambiar el icono
+
+El icono vive en dos archivos generados a partir de una única imagen cuadrada (PNG con transparencia):
+
+- `assets\tiddl.ico`: se incrusta en el `.exe` (Explorer, barra de tareas, accesos directos, panel de control) y la ventana lo carga en la barra de título.
+- `assets\tiddl-icon.png`: copia maestra de 512 px para documentación y futuras regeneraciones.
+
+Para reemplazarlo, guarda la imagen nueva y regenera ambos archivos:
+
+```powershell
+python -m pip install pillow
+python tools\build_icon.py ruta\a\icono-nuevo.png
+```
+
+Sin argumentos, `build_icon.py` reconstruye el `.ico` desde `assets\tiddl-icon.png`. El script recorta el margen transparente y genera las capas de 16 a 256 px que Windows necesita.
+
+Para que el cambio llegue al ejecutable hay que **volver a compilar** (sección anterior) y, en ejecución desde el código fuente, basta con reiniciar `python -m tiddl gui`. Puedes comprobar que todo quedó bien con:
+
+```powershell
+python tools\check_icon.py            # ventana en modo código fuente
+python tools\check_icon.py dist\tiddl.exe   # recurso del .exe y ventana del ejecutable
+```
+
 ## Verificación opcional
 
 ```powershell

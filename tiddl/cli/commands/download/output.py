@@ -68,6 +68,7 @@ class RichOutput:
 
         self.total_task = self.total_progress.add_task("Total", total=0, start=True)
         self.total_downloads = 0
+        self.total_skip_reasons: dict[str, int] = {}
 
     def _write_gui_progress(self) -> None:
         if not self.gui_progress_file:
@@ -82,6 +83,7 @@ class RichOutput:
                     {
                         "completed": task.completed,
                         "total": task.total,
+                        "skipped_by_reason": self.total_skip_reasons,
                         **self.gui_resource,
                     }
                 ),
@@ -108,8 +110,12 @@ class RichOutput:
         self.total_progress.update(self.total_task, total=task.total + count)
         self._write_gui_progress()
 
-    def total_complete(self) -> None:
+    def total_complete(self, skip_reason: str | None = None) -> None:
         self.total_progress.advance(self.total_task, advance=1)
+        if skip_reason:
+            self.total_skip_reasons[skip_reason] = (
+                self.total_skip_reasons.get(skip_reason, 0) + 1
+            )
         self._write_gui_progress()
 
     def download_start(self, description: str) -> TaskID:

@@ -486,6 +486,11 @@ def download_callback(
 
                 case "video":
                     video = ctx.obj.api.get_video(resource.id)
+                    rich_output.set_gui_resource(
+                        artist=video.artist.name if video.artist else "",
+                        title=video.title,
+                        resource_type="video",
+                    )
                     template = TEMPLATE or CONFIG.templates.video
 
                     if (

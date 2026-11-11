@@ -12,7 +12,7 @@ import webbrowser
 from contextlib import redirect_stderr, redirect_stdout
 from io import StringIO
 from pathlib import Path
-from tkinter import StringVar, TclError, Tk, messagebox, ttk
+from tkinter import BooleanVar, Checkbutton, StringVar, TclError, Tk, messagebox, ttk
 
 # ``python tiddl/gui.py`` is convenient during development.  Add the project
 # root in that case; normal package/module execution does not need this.
@@ -58,6 +58,7 @@ class TiddlGUI:
         self.events: queue.Queue[tuple[str, str]] = queue.Queue()
         self.running = False
         self.quality = StringVar(value=self._saved_quality_label())
+        self.allow_atmos = BooleanVar(value=self._saved_allow_atmos())
         self.album_url = StringVar()
         self.status = StringVar(value="Listo para descargar")
         self.now_playing = StringVar(value="")
@@ -71,18 +72,25 @@ class TiddlGUI:
     def _configure_style(self) -> None:
         style = ttk.Style(self.root)
         style.theme_use("clam")
+        self.root.option_add("*TCombobox*Listbox.background", "#292d35")
+        self.root.option_add("*TCombobox*Listbox.foreground", "#f5f7fb")
+        self.root.option_add("*TCombobox*Listbox.selectBackground", "#13c8a3")
+        self.root.option_add("*TCombobox*Listbox.selectForeground", "#07120f")
         style.configure("App.TFrame", background="#101114")
         style.configure("Card.TFrame", background="#1b1d22")
         style.configure("Title.TLabel", background="#101114", foreground="#f5f7fb", font=("Segoe UI", 24, "bold"))
         style.configure("Sub.TLabel", background="#101114", foreground="#a8adb9", font=("Segoe UI", 10))
         style.configure("CardTitle.TLabel", background="#1b1d22", foreground="#f5f7fb", font=("Segoe UI", 14, "bold"))
         style.configure("Card.TLabel", background="#1b1d22", foreground="#b8bec9", font=("Segoe UI", 10))
+        style.configure("Card.TCheckbutton", background="#1b1d22", foreground="#b8bec9", font=("Segoe UI", 10))
+        style.map("Card.TCheckbutton", background=[("active", "#1b1d22")], foreground=[("active", "#f5f7fb")])
         style.configure("Primary.TButton", background="#13c8a3", foreground="#07120f", font=("Segoe UI", 10, "bold"), padding=(18, 10))
         style.map("Primary.TButton", background=[("active", "#24d9b4"), ("disabled", "#52635f")])
         style.configure("Muted.TButton", background="#2a2e36", foreground="#f1f4f8", padding=(14, 8))
         style.map("Muted.TButton", background=[("active", "#363c46")])
         style.configure("TEntry", fieldbackground="#292d35", foreground="#f5f7fb", insertcolor="#f5f7fb", padding=10)
-        style.configure("TCombobox", fieldbackground="#292d35", background="#292d35", foreground="#f5f7fb", padding=8)
+        style.configure("Dark.TCombobox", fieldbackground="#292d35", background="#292d35", foreground="#f5f7fb", arrowcolor="#f5f7fb", padding=8)
+        style.map("Dark.TCombobox", fieldbackground=[("readonly", "#292d35")], foreground=[("readonly", "#f5f7fb")], selectbackground=[("readonly", "#292d35")], selectforeground=[("readonly", "#f5f7fb")])
         style.configure("Gui.Horizontal.TProgressbar", background="#13c8a3", troughcolor="#292d35", bordercolor="#292d35", lightcolor="#13c8a3", darkcolor="#13c8a3")
 
     def _build(self) -> None:
@@ -100,7 +108,7 @@ class TiddlGUI:
         download = ttk.Frame(content, style="Card.TFrame", padding=24)
         download.grid(row=0, column=0, sticky="nsew", padx=(0, 12))
         ttk.Label(download, text="Descargar música", style="CardTitle.TLabel").pack(anchor="w")
-        ttk.Label(download, text="Pega un enlace de álbum o pista de TIDAL.", style="Card.TLabel").pack(anchor="w", pady=(5, 18))
+        ttk.Label(download, text="Pega un enlace de álbum, pista o video de TIDAL.", style="Card.TLabel").pack(anchor="w", pady=(5, 18))
         url_row = ttk.Frame(download, style="Card.TFrame")
         url_row.pack(fill="x")
         url_row.columnconfigure(0, weight=1)
@@ -126,9 +134,23 @@ class TiddlGUI:
         settings.pack(fill="x")
         ttk.Label(settings, text="Configuración", style="CardTitle.TLabel").pack(anchor="w")
         ttk.Label(settings, text="Calidad de audio", style="Card.TLabel").pack(anchor="w", pady=(14, 5))
-        picker = ttk.Combobox(settings, state="readonly", values=list(QUALITIES), textvariable=self.quality)
+        picker = ttk.Combobox(settings, style="Dark.TCombobox", state="readonly", values=list(QUALITIES), textvariable=self.quality)
         picker.pack(fill="x")
         picker.bind("<<ComboboxSelected>>", lambda _: self._save_settings())
+        Checkbutton(
+            settings,
+            text="Permitir Dolby Atmos (M4A)",
+            variable=self.allow_atmos,
+            command=self._save_settings,
+            background="#1b1d22",
+            foreground="#b8bec9",
+            activebackground="#1b1d22",
+            activeforeground="#f5f7fb",
+            selectcolor="#292d35",
+            highlightthickness=0,
+            borderwidth=0,
+            font=("Segoe UI", 10),
+        ).pack(anchor="w", pady=(12, 0))
         ttk.Label(settings, text="La calidad se aplica a las próximas descargas.", style="Card.TLabel", wraplength=230).pack(anchor="w", pady=(10, 0))
 
         account = ttk.Frame(side, style="Card.TFrame", padding=20)
@@ -148,8 +170,23 @@ class TiddlGUI:
         except (OSError, ValueError, StopIteration):
             return next(label for label, key in QUALITIES.items() if key == CONFIG.download.track_quality)
 
+    def _saved_allow_atmos(self) -> bool:
+        try:
+            saved = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+            return bool(saved.get("allow_atmos", False))
+        except (OSError, ValueError):
+            return False
+
     def _save_settings(self) -> None:
-        SETTINGS_FILE.write_text(json.dumps({"track_quality": QUALITIES[self.quality.get()]}), encoding="utf-8")
+        SETTINGS_FILE.write_text(
+            json.dumps(
+                {
+                    "track_quality": QUALITIES[self.quality.get()],
+                    "allow_atmos": self.allow_atmos.get(),
+                }
+            ),
+            encoding="utf-8",
+        )
         self.status.set("Calidad guardada")
 
     def _refresh_account(self) -> None:
@@ -168,8 +205,8 @@ class TiddlGUI:
     def start_download(self) -> None:
         try:
             resource = TidalResource.from_string(self.album_url.get().strip())
-            if resource.type not in ("album", "track"):
-                raise ValueError("Solo se admiten enlaces de álbum o pista de TIDAL.")
+            if resource.type not in ("album", "track", "video"):
+                raise ValueError("Solo se admiten enlaces de álbum, pista o video de TIDAL.")
         except ValueError as exc:
             messagebox.showerror("Enlace no válido", str(exc))
             return
@@ -190,7 +227,17 @@ class TiddlGUI:
         threading.Thread(target=self._run_download, args=(resource.url,), daemon=True).start()
 
     def _run_download(self, url: str) -> None:
-        download_args = ["download", "--track-quality", QUALITIES[self.quality.get()], "url", url]
+        download_args = [
+            "download",
+            "--track-quality",
+            QUALITIES[self.quality.get()],
+            "--video-quality",
+            "fhd",
+            "--dolby-atmos",
+            "allow" if self.allow_atmos.get() else "none",
+            "url",
+            url,
+        ]
         output = StringIO()
         previous_progress_file = os.environ.get("TIDDL_GUI_PROGRESS_FILE")
         try:
@@ -263,7 +310,7 @@ class TiddlGUI:
             while True:
                 kind, message = self.events.get_nowait()
                 if kind == "complete":
-                    self.status.set(message)
+                    self.status.set(self._completion_status(message))
                     self.progress.configure(value=self.progress.cget("maximum"))
                     self.progress_text.set("Completado")
                 elif kind == "login":
@@ -279,6 +326,18 @@ class TiddlGUI:
             pass
         self.root.after(100, self._process_events)
 
+    def _completion_status(self, default_message: str) -> str:
+        try:
+            progress = json.loads(PROGRESS_FILE.read_text(encoding="utf-8"))
+            atmos_skipped = int(progress.get("skipped_by_reason", {}).get("atmos", 0))
+        except (FileNotFoundError, ValueError, KeyError, OSError):
+            return default_message
+
+        if atmos_skipped:
+            label = "pista" if atmos_skipped == 1 else "pistas"
+            return f"Descarga finalizada: {atmos_skipped} {label} omitidas por ser Dolby Atmos."
+        return default_message
+
     def _read_progress(self) -> None:
         if not self.running:
             return
@@ -290,7 +349,11 @@ class TiddlGUI:
             return
 
         self.progress.configure(maximum=total, value=completed)
-        self.progress_text.set(f"{int(completed)} de {int(total)} pistas completadas")
+        resource_type = data.get("resource_type", "")
+        if resource_type == "video":
+            self.progress_text.set("Video completado" if completed >= total else "Descargando video...")
+        else:
+            self.progress_text.set(f"{int(completed)} de {int(total)} pistas completadas")
         artist = data.get("artist", "")
         title = data.get("title", "")
         if title:
